@@ -58,7 +58,7 @@ class UCMAgent(Agent):
         self._agent_id=self.config['agentid']
         
         
-        print('UCMAgent waking up and subscribing to CTAevent')
+        print('UCMAgent waking up and subscribing to topic: CTAevent')
         self.vip.pubsub.subscribe('pubsub','CTAevent', callback=self.forward_UCM)
         
     def forward_UCM(self, peer, sender, bus, topic, headers, message):
@@ -70,6 +70,7 @@ class UCMAgent(Agent):
         mesdict = json.loads(message)
         
         messageSubject = mesdict.get('message_subject', None)
+        eventID = mesdict.get('event_uid',None)
         messageTarget = mesdict.get('message_target', 'all')
         #ignore anything posted to the topic other than notifications of new events
         if messageSubject != 'new_event':
@@ -79,7 +80,7 @@ class UCMAgent(Agent):
             return 0
         
         print('UCM proxy agent for ' + self.UCMname + ' has been asked to relay a message')
-        self.vip.pubsub.publish('pubsub', 'CTAevent', headers = {}, message = "{'message_target': 'acknowledgement', 'message_subject': 'initiated'}" )
+        self.vip.pubsub.publish('pubsub', 'CTAevent', headers = {}, message = '{"message_subject": "initiated"}' )
         
 
         eventName = mesdict.get('event_name','normal')
@@ -95,6 +96,7 @@ class UCMAgent(Agent):
             #remove key-value pairs that aren't needed for the REST API message
             mesdict.pop('message_subject', None)
             mesdict.pop('message_target', None)
+            mesdict.pop('event_uid',None)
             # REMEMBER TO CHECK BACK HERE WHEN THE VOLTTRON BUS MESSAGING FORMAT HAS BEEN SPECIFIED
             
             cleanmessage = json.dumps(mesdict)
@@ -104,22 +106,28 @@ class UCMAgent(Agent):
         print('sending ' + method + ' for page ' + requestURL + ' for ' + eventName + ' event at ' + now)
         #send REST API CTA command
         try:
-            result = urllib2.urlopen(UCMrequest)
-        except socket.timeout, e:
-            HTTPcode = 'timeout'
+            result = urllib2.urlopen(UCMrequest, timeout = 10)
+        except urllib2.URLError, e:
+            print('an urllib2 error of type {error} occurred while sending message to {ucm}'.format(error = e, ucm = self.UCMname))
+            HTTPcode = 'no_response'
+            notification = '{"message_subject": "urllib2_failure", "event_UID": "' + eventID + '" }'
+            self.vip.pubsub.publish(peer = 'pubsub', topic = 'CTAevent', headers = {}, message = notification )
+            return 0
+
         
         HTTPcode = result.getcode()
-        UCMresponse = response.read()
+        UCMresponse = result.read()
         
         UCMresponsedict = json.loads(UCMresponse)
         UCMresponsedict['message_target'] = 'UCMresponse'
         UCMresponsedict['http_code'] = HTTPcode
-        
+        UCMresponsedict['event_uid'] = EventID
+        UCMresponsestr = json.dumps(UCMresponsedict)        
         #UCMresponsestr = json.dumps(UCMresponsedict)
         
         print('received code: ' + HTTPcode)
         #publish notification of response receipt with REST API response fields if applicable
-        self.vip.pubsub.publish(peer = 'pubsub', topic = 'CTAevent', headers = {}, message = UCMresponsedict )
+        self.vip.pubsub.publish(peer = 'pubsub', topic = 'CTAevent', headers = {}, message = UCMresponsestr )
         
         #return 1 if successful
         return 1
@@ -129,7 +137,7 @@ def main(argv=sys.argv):
     try:
         utils.vip_main(UCMAgent)
     except Exception as e:
-        _log.exception(e)
+        _log.exception('unhandled exception')
             
 if __name__== '__main__':
     #entry point for script_from_examples
