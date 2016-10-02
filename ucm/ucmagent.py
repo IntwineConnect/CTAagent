@@ -83,20 +83,22 @@ class UCMAgent(Agent):
         self.vip.pubsub.publish('pubsub', 'CTAevent', headers = {}, message = '{"message_subject": "initiated"}' )
         
 
-        eventName = mesdict.get('event_name','normal')
+        eventName = mesdict.get('message_type','normal')
+       
         #get URL for request
-        page = self.URLmap.get('event_name','/load.cgi?')        
+        page = self.URLmap.get(eventName,'/load.cgi?')        
         requestURL = 'http://' + self.UCMip + page
         UCMrequest = urllib2.Request(requestURL)
         
         #determine whether to use GET, POST, or anything else if necessary
-        method = self.HTTPmethods.get(mesdict.get('event_name', 'normal'),'POST');
+        method = self.HTTPmethods.get(eventName,'POST');
         
         if method == 'POST':
             #remove key-value pairs that aren't needed for the REST API message
             mesdict.pop('message_subject', None)
             mesdict.pop('message_target', None)
-            mesdict.pop('event_uid',None)
+            mesdict.pop('event_uid', None)
+            mesdict.pop('message_type', None)
             # REMEMBER TO CHECK BACK HERE WHEN THE VOLTTRON BUS MESSAGING FORMAT HAS BEEN SPECIFIED
             
             cleanmessage = json.dumps(mesdict)
