@@ -58,7 +58,7 @@ class UCMAgent(Agent):
         self._agent_id=self.config['agentid']
         
         
-        print('UCMAgent waking up and subscribing to topic: CTAevent')
+        print('!!!HELLO!!! UCMAgent <{name}> starting up and subscribing to topic: CTAevent'.format(name = self.UCMname))
         self.vip.pubsub.subscribe('pubsub','CTAevent', callback=self.forward_UCM)
         
     def forward_UCM(self, peer, sender, bus, topic, headers, message):
@@ -75,15 +75,17 @@ class UCMAgent(Agent):
         #ignore anything posted to the topic other than notifications of new events
         if messageSubject != 'new_event':
             return 0
-        #if the message is meant for a different UCM
-        if messageTarget != self.UCMname and messageTarget != 'all':
+        #ignore if the message is meant for a different UCM
+        if (self.checkForName(messageTarget) == False) and (messageTarget != 'all'):
             return 0
         
-        print('UCM proxy agent for ' + self.UCMname + ' has been asked to relay a message')
-        self.vip.pubsub.publish('pubsub', 'CTAevent', headers = {}, message = '{"message_subject": "initiated"}' )
-        
-
         eventName = mesdict.get('message_type','normal')
+        
+        print('***NEW EVENT*** of type <{event}> for  UCM <{name}>'.format(event = eventName, name = self.UCMname))
+        notification = '{"message_subject": "initiated", "event_uid": "' + eventID + '"}'
+        self.vip.pubsub.publish('pubsub', 'CTAevent', headers = {}, message = notification )
+        
+        
        
         #get URL for request
         page = self.URLmap.get(eventName,'/load.cgi?')        
@@ -121,7 +123,7 @@ class UCMAgent(Agent):
         UCMresponse = result.read()
         
         UCMresponsedict = json.loads(UCMresponse)
-        UCMresponsedict['message_target'] = 'UCMresponse'
+        UCMresponsedict['message_subject'] = 'UCMresponse'
         UCMresponsedict['http_code'] = HTTPcode
         UCMresponsedict['event_uid'] = EventID
         UCMresponsestr = json.dumps(UCMresponsedict)        
@@ -130,9 +132,27 @@ class UCMAgent(Agent):
         print('received code: ' + HTTPcode)
         #publish notification of response receipt with REST API response fields if applicable
         self.vip.pubsub.publish(peer = 'pubsub', topic = 'CTAevent', headers = {}, message = UCMresponsestr )
-        
+        print('###RECEIVED A RESPONSE### relative to event #{event} from <{name}> with HTTP code <{code}> and body message : {body}'.format(event = eventID, name = self.UCMname, code = HTTPcode, body = UCMresponse))
         #return 1 if successful
         return 1
+        
+    #the message_target can be either the name of a single device or an array of names    
+    def checkForName(self,names):
+        if type(names) is list: 
+            for name in names:
+                if name == self.UCMname:
+                    return True
+            return False
+        elif type(names) is str:
+            if names == self.UCMname:
+                return True
+            else:
+                return False
+        elif type(names) is unicode:
+            if names == self.UCMname:
+                return True
+            else:
+                return False
         
 def main(argv=sys.argv):
     '''Main method called by the eggsecutable'''
