@@ -41,7 +41,7 @@ class UCMAgent(Agent):
               }
     
     UCMname = 'defaultname'
-    UCMip = '192.168.1.3'
+    UCMip = '192.168.1.116'
     
     def __init__(self,config_path, **kwargs):
         super(UCMAgent, self).__init__(**kwargs)
@@ -118,18 +118,24 @@ class UCMAgent(Agent):
             self.vip.pubsub.publish(peer = 'pubsub', topic = 'CTAevent', headers = {}, message = notification )
             return 0
 
+            
         
         HTTPcode = result.getcode()
         UCMresponse = result.read()
+        print(UCMresponse)
+        if len(UCMresponse) > 0 and method == 'GET':
+            UCMresponsedict = json.loads(UCMresponse)
+        else:
+            UCMresponsedict = {}
         
-        UCMresponsedict = json.loads(UCMresponse)
         UCMresponsedict['message_subject'] = 'UCMresponse'
-        UCMresponsedict['http_code'] = HTTPcode
-        UCMresponsedict['event_uid'] = EventID
-        UCMresponsestr = json.dumps(UCMresponsedict)        
+        UCMresponsedict['http_code'] = str(HTTPcode)
+        UCMresponsedict['event_uid'] = eventID
+        UCMresponsestr = json.dumps(UCMresponsedict)
+                    
         #UCMresponsestr = json.dumps(UCMresponsedict)
         
-        print('received code: ' + HTTPcode)
+        print('received code: ' + str(HTTPcode))
         #publish notification of response receipt with REST API response fields if applicable
         self.vip.pubsub.publish(peer = 'pubsub', topic = 'CTAevent', headers = {}, message = UCMresponsestr )
         print('###RECEIVED A RESPONSE### relative to event #{event} from <{name}> with HTTP code <{code}> and body message : {body}'.format(event = eventID, name = self.UCMname, code = HTTPcode, body = UCMresponse))
