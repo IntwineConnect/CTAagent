@@ -5,12 +5,14 @@ from volttron.platform.agent import utils
 from zmq.log.handlers import TOPIC_DELIM
 
 from datetime import datetime
+from . import settings
 import logging
 import sys
 
 import urllib2
 import socket
 import json
+from pip._vendor.distlib.locators import Page
 
 utils.setup_logging()
 _log = logging.getLogger(__name__)
@@ -26,7 +28,8 @@ class UCMAgent(Agent):
                    'time_remaining': 'POST',
                    'time_sync': 'POST',
                    'query_op_state': 'GET',
-                   'info_request': 'GET'   
+                   'info_request': 'GET',
+                   'comm_state': 'POST' 
                    }
     URLmap = {'shed': '/load.cgi?',
               'normal': '/load.cgi?',
@@ -37,7 +40,8 @@ class UCMAgent(Agent):
               'time_remaining': '/price.cgi?',
               'time_sync': '/time.cgi?',
               'query_op_state': '/state_sgd.cgi?',
-              'info_request': '/info_sgd.cgi?'              
+              'info_request': '/info_sgd.cgi?',
+              'comm_state': '/comm.cgi?'            
               }
     
     UCMname = 'defaultname'
@@ -60,6 +64,50 @@ class UCMAgent(Agent):
         
         print('!!!HELLO!!! UCMAgent <{name}> starting up and subscribing to topic: CTAevent'.format(name = self.UCMname))
         self.vip.pubsub.subscribe('pubsub','CTAevent', callback=self.forward_UCM)
+     
+    @Core.periodic(settings.COMM_GOOD_INTERVAL)
+    def comm_status(self):
+        '''
+        periodically sends a message to the UCM to test if the VOLTTRON-UCM connection is still good.
+        If the connection is good, then the UCM will relay the channel status to its connected SGD.
+        '''
+        mesdict = {"commstate": "good"}
+        
+        page = self.URLmap.get("comm_state", "/comm.cgi?")
+        requestURL = "http://" + self.UCMip + page
+        UCMrequest = urllib2.Request(requestURL)
+        
+        method = self.HTTPmethods.get("comm_state", "POST")
+        messtr = json.dumps(mesdict)
+        UCMrequest.add_data(messtr)
+        
+        UCMresponsedict = {"message_subject": "commstate_update"}
+        UCMresponsedict["message_target"] = self.UCMname
+        try:
+            result = urllib2.urlopen(UCMrequest, timeout = 10)
+        except urllib2.URLError, e:
+            print('an urllib2 error of type {error} occurred while sending comms test message to {ucm}'.format(error = e, ucm = self.UCMname))
+            HTTPcode = 'no_response'
+            UCMresponsedict["message_target"] = self.UCMname
+            UCMresponsedict["commstate"] = "UCM_timeout"
+            notification = json.dumps(UCMresponsedict)
+            self.vip.pubsub.publish(peer = 'pubsub', topic = 'CTAevent', headers = {}, message = notification )
+            return 0
+        
+        HTTPcode = result.getcode()
+        
+        if HTTPcode == 200:
+            UCMresponsedict["commstate"] = "good"
+        elif HTTPcode == 400:
+            UCMresponsedict["commstate"] = "SGD_timeout"
+        else:
+            UCMresponsedict["commstate"] = "ambiguous"
+             
+        print("<{name}> channel status update: {status}".format(name =self.UCMname, status = UCMresponsedict["commstate"]))
+        notification = json.dumps(UCMresponsedict)
+        self.vip.pubsub.publish(peer = 'pubsub', topic = 'CTAevent', headers = {}, message = notification)
+        
+
         
     def forward_UCM(self, peer, sender, bus, topic, headers, message):
         '''
@@ -72,11 +120,16 @@ class UCMAgent(Agent):
         messageSubject = mesdict.get('message_subject', None)
         eventID = mesdict.get('event_uid',None)
         messageTarget = mesdict.get('message_target', 'all')
+        ADRstartTime = mesdict.get('ADR_start_time', 'now')
+        
         #ignore anything posted to the topic other than notifications of new events
         if messageSubject != 'new_event':
             return 0
         #ignore if the message is meant for a different UCM
         if (self.checkForName(messageTarget) == False) and (messageTarget != 'all'):
+            return 0
+        #If the message is meant to be sent later ignore it for now. The message delay agent resubmit it when it's time to send
+        if (ADRstartTime != 'now'):
             return 0
         
         eventName = mesdict.get('message_type','normal')
@@ -101,6 +154,7 @@ class UCMAgent(Agent):
             mesdict.pop('message_target', None)
             mesdict.pop('event_uid', None)
             mesdict.pop('message_type', None)
+            mesdict.pop('ADR_start_time', None)
             # REMEMBER TO CHECK BACK HERE WHEN THE VOLTTRON BUS MESSAGING FORMAT HAS BEEN SPECIFIED
             
             cleanmessage = json.dumps(mesdict)
