@@ -83,6 +83,11 @@ class UCMAgent(Agent):
         
         UCMresponsedict = {"message_subject": "commstate_update"}
         UCMresponsedict["message_target"] = self.UCMname
+        
+        now = datetime.utcnow().isoformat() + 'Z'
+        if settings.DEBUGGING_LEVEL >= 2:
+            print("Sending a message to test connection at {time}".format(time = now))
+        
         try:
             result = urllib2.urlopen(UCMrequest, timeout = 10)
         except urllib2.URLError, e:
@@ -103,7 +108,7 @@ class UCMAgent(Agent):
         else:
             UCMresponsedict["commstate"] = "ambiguous"
              
-        print("<{name}> channel status update: {status}".format(name =self.UCMname, status = UCMresponsedict["commstate"]))
+        print("<{name}> channel status update from {time}: {status}".format(name =self.UCMname, time = now, status = UCMresponsedict["commstate"]))
         notification = json.dumps(UCMresponsedict)
         self.vip.pubsub.publish(peer = 'pubsub', topic = 'CTAevent', headers = {}, message = notification)
         
