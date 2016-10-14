@@ -4,7 +4,7 @@ from volttron.platform.vip.agent import Agent, Core
 from volttron.platform.agent import utils
 from zmq.log.handlers import TOPIC_DELIM
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from . import settings
 import logging
 import sys
@@ -18,7 +18,7 @@ utils.setup_logging()
 _log = logging.getLogger(__name__)
 
 class UCMAgent(Agent):
-    
+    currentPriority = 0
     HTTPmethods = {'shed' : 'POST',
                    'normal': 'POST',
                    'grid_emergency': 'POST',
@@ -126,6 +126,7 @@ class UCMAgent(Agent):
         eventID = mesdict.get('event_uid',None)
         messageTarget = mesdict.get('message_target', 'all')
         ADRstartTime = mesdict.get('ADR_start_time', 'now')
+        priority = mesdict.get("priority",0)
         
         #ignore anything posted to the topic other than notifications of new events
         if messageSubject != 'new_event':
@@ -136,6 +137,9 @@ class UCMAgent(Agent):
         #If the message is meant to be sent later ignore it for now. The message delay agent resubmit it when it's time to send
         if (ADRstartTime != 'now'):
             return 0
+        if (priority < self.currentPriority):
+            print("MESSAGE_REJECTED! new event priority is {new}, current priority is {cur}".format(new = str(priority), cur = str(self.currentPriority)))
+            return 0
         
         eventName = mesdict.get('message_type','normal')
         
@@ -143,8 +147,20 @@ class UCMAgent(Agent):
         notification = '{"message_subject": "initiated", "event_uid": "' + eventID + '"}'
         self.vip.pubsub.publish('pubsub', 'CTAevent', headers = {}, message = notification )
         
-        
-       
+        #manage priority
+        if mesdict["event_duration"] is not type(None): 
+            #set the current priority according to the accepted new message priority if applicable
+            self.currentPriority = priority
+            #set up a callback to set the priority to zero when an event has ended
+            duration = mesdict["event_duration"]
+            duration = int(duration.replace("S",""))
+            priorityTime = datetime.utcnow() + timedelta(seconds = duration)
+            
+            Core.schedule(priorityTime, self.priorityCallback)
+            
+            if(settings.DEBUGGING_LEVEL >= 1):
+                print("scheduling priority reversion for {time}".format(time = priorityTime.isoformat()))
+            
         #get URL for request
         page = self.URLmap.get(eventName,'/load.cgi?')        
         requestURL = 'http://' + self.UCMip + page
@@ -200,6 +216,10 @@ class UCMAgent(Agent):
         print('###RECEIVED A RESPONSE### relative to event #{event} from <{name}> with HTTP code <{code}> and body message : {body}'.format(event = eventID, name = self.UCMname, code = HTTPcode, body = UCMresponse))
         #return 1 if successful
         return 1
+        
+    def priorityCallback(self):
+        self.currentPriority = 0    
+        print("Event should be over. Priority reverting to 0")
         
     #the message_target can be either the name of a single device or an array of names    
     def checkForName(self,names):
