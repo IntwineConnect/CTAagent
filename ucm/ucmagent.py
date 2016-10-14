@@ -156,7 +156,10 @@ class UCMAgent(Agent):
             duration = int(duration.replace("S",""))
             priorityTime = datetime.utcnow() + timedelta(seconds = duration)
             
-            Core.schedule(priorityTime, self.priorityCallback)
+            if('PrioritySched' in locals() or 'PrioritySched' in globals()):
+                PrioritySched.cancel()
+            
+            PrioritySched = Core.schedule(priorityTime, self.priorityCallback)
             
             if(settings.DEBUGGING_LEVEL >= 1):
                 print("scheduling priority reversion for {time}".format(time = priorityTime.isoformat()))
