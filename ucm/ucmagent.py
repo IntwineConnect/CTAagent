@@ -44,8 +44,8 @@ class UCMAgent(Agent):
               'comm_state': '/comm.cgi?'            
               }
     
-    UCMname = 'defaultname'
-    UCMip = '192.168.1.116'
+    UCMname = 'DCmodule'
+    UCMip = '192.168.10.163'
     
     def __init__(self,config_path, **kwargs):
         super(UCMAgent, self).__init__(**kwargs)
@@ -179,6 +179,7 @@ class UCMAgent(Agent):
             mesdict.pop('event_uid', None)
             mesdict.pop('message_type', None)
             mesdict.pop('ADR_start_time', None)
+            mesdict.pop('priority', None)
             # REMEMBER TO CHECK BACK HERE WHEN THE VOLTTRON BUS MESSAGING FORMAT HAS BEEN SPECIFIED
             
             cleanmessage = json.dumps(mesdict)
