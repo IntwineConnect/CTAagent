@@ -218,10 +218,10 @@ class CtaAgent(Agent):
         parses message and issues REST API CTA command
         '''
         #deserialize message string
+        # TODO long method with too many functionalities. Refactor
         mesdict = json.loads(message)
         messageSubject = mesdict.get('message_subject', None)
         priority = mesdict.get("priority",0)
-        
         #ignore anything posted to the topic other than notifications of new events
         if messageSubject != 'new_event':
             return json.dumps({'status' : 'Not a new event message'})
