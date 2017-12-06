@@ -96,7 +96,7 @@ class CtaAgent(Agent):
         24576 : "Gateway Device"}
     
     UCMname = 'ACmodule'
-    UCMip = '192.168.10.107'
+    UCMip = '192.168.10.109'
 
     def __init__(self, config_path, **kwargs):
         super(CtaAgent, self).__init__(**kwargs)
@@ -117,6 +117,14 @@ class CtaAgent(Agent):
 
     @Core.receiver('onstart')
     def starting(self, sender, **kwargs):
+        self.comm_status()
+        self.initialize_load_agent()
+        #self.load_up()
+        #self.shed()
+        #self.commodity()
+        #self.load_percent('30')
+
+    def initialize_load_agent(self):
         uuid = self.vip.rpc.call(CONTROL, 'install_agent_local', _load_agent_path).get(timeout=30)
         agents = self.vip.rpc.call(CONTROL, "list_agents").get(timeout=5)
         agent_id = self.retrieve_agent_identity(agents, uuid)
@@ -125,19 +133,51 @@ class CtaAgent(Agent):
         message['event_name'] = 'info_sgd'
         response = self.forward_UCM(json.dumps(message))
         dev_type = json.loads(response).get('Device Type', 0)
-        dev_name = self.device_type.get(dev_type)
-        dev_load = 100
+        dev_load = 1
         # TODO change dev load. make new map for it devtype->devload
-        json_contents = json.dumps({'device_type': dev_name, 'device_load':dev_load, 'cta_id': self.core.agent_uuid})
+        json_contents = json.dumps({'device_type': dev_type, 'device_load':dev_load, 'cta_id': self.core.identity})
         self.vip.rpc.call(CONFIGURATION_STORE, "manage_store", agent_id, 'config', json_contents, 'json')
         self.vip.rpc.call(CONTROL, "start_agent", uuid).get(timeout=5)
 
-    def test_one_command(self, sender, **kwargs):
+
+    def load_percent(self, percent):
+        self.comm_status()
+        self.check_sgd_state()
+        message = {}
+        message['message_subject'] = 'new_event'
+        message['event_name'] = 'change_level'
+        message['load_percent'] = percent
+        #message = {"event_name": "change_level", "load_percent": "21.7430980094", "message_subject": "new_event"}
+        response = self.forward_UCM(json.dumps(message))
+        print(response)
+
+    def load_up(self):
+        self.comm_status()
+        self.check_sgd_state()
+        message = {}
+        message['message_subject'] = 'new_event'
+        message['event_name'] = 'load_up'
+        message['event_duration'] = 300
+        response = self.forward_UCM(json.dumps(message))
+        print(response)
+
+
+    def commodity(self):
         self.comm_status()
         self.check_sgd_state()
         message = {}
         message['message_subject'] = 'new_event'
         message['event_name'] = 'commodity'
+        response = self.forward_UCM(json.dumps(message))
+        print(response)
+
+    def shed(self):
+        self.comm_status()
+        self.check_sgd_state()
+        message = {}
+        message['message_subject'] = 'new_event'
+        message['event_name'] = 'shed'
+        message['event_duration'] = 300
         response = self.forward_UCM(json.dumps(message))
         print(response)
 
@@ -162,7 +202,9 @@ class CtaAgent(Agent):
 
     @RPC.export("cta_command")
     def send_ucm_command(self, json_message):
+        print('GETTING CALLED')
         response = self.forward_UCM(json_message)
+        print('response is... ', response)
         self.check_sgd_state()
         return response
 
@@ -238,18 +280,17 @@ class CtaAgent(Agent):
             self.currentPriority = priority
             #set up a callback to set the priority to zero when an event has ended
             duration = mesdict.get("event_duration")
-            duration = int(duration.replace("S",""))
+            if type(duration) is not int:
+                duration = int(duration.replace("S",""))
             priorityTime = datetime.utcnow() + timedelta(seconds=duration)
             if('PrioritySched' in locals() or 'PrioritySched' in globals()):
                 PrioritySched.cancel()
             
             PrioritySched = Core.schedule(priorityTime, self.priorityCallback)
-            
-        #get URL for request
+        #get URL for requotp://' + self.UCMip + page
         page = self.URLmap.get(eventName,'/load.cgi?')        
         requestURL = 'http://' + self.UCMip + page
         UCMrequest = urllib2.Request(requestURL)
-        
         # determine whether to use GET, POST, or anything else if necessary
         method = self.HTTPmethods.get(eventName,'POST');
         
